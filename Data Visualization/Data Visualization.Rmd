@@ -1,0 +1,399 @@
+---
+title: "Data Visualization with R"
+author: 
+  - Professor Andrea Cappozzo #stefano.peluso@unicatt.it
+  - Notes by Maria Briones
+output: 
+    rmdformats::readthedown
+---
+<!-- TO DO: Exersises class 23-02-2026 for data visualization
+            For tidy time series tools, check the tidyverts ecosystem
+            -->
+
+```{r Setup, echo=FALSE, include=FALSE, message=FALSE, warning=FALSE}
+
+#function to make colored letters
+colorize <- function(x, color) {
+  if (knitr::is_latex_output()) {
+    sprintf("\\textcolor{%s}{%s}", color, x)
+  } else if (knitr::is_html_output()) {
+    sprintf("<span style='color: %s;'>%s</span>", color,
+      x)
+  } else x
+}
+
+#Set course working directory
+datawd <- "C:/Users/marub/Desktop/DataSci for Management/Statistics with R/Data Visualization"
+
+library(pacman)
+
+p_load(dplyr)
+
+options(tidyverse.quiet = TRUE)
+```
+
+# Data Science with R
+
+We well see: Data manipulation, Data visualization, Result presentation and AI assisted EDA. 
+
+<!-- Invited teacher: Francesco Corea.11:30  -->
+
+Libraries for Data Science on R: *dplyr, tibble, ggplot2, readr, tidyr, stringr, forcats (for categorical data), lubridate* and *purrr*. 
+
+```{r libraries}
+library(tidyverse) # I've set options(tidyverse.quiet = TRUE) previously
+library(skimr)
+library(ggplot2)
+library(patchwork)
+library(readxl)
+library(tidyr)
+```
+
+
+There's a data flow for the data analysis: 
+1. Import
+2. Tidy (clean)
+3. Explore (transform, visualise, model)
+4. Communicate.
+
+The communication is crucial as, if we are not able to convince our costumber we may have a very good model that will go to waste. Remember the point of Data Science is assist the decision-making process. 
+
+# Data Manipulation
+
+We will use a Customers annual spend data set (*wholesale_customers_data.csv*). With $N=440$ and 8 variables. 
+
+## DF vs tibble
+
+```{r}
+
+# Read the dataframe we will use from the folder Class 1 on my working directory
+wholesale = read.csv(paste0(datawd ,"//wholesale_customers_data.csv")
+                          , sep=",")
+
+wholesale %>% class()
+```
+
+```{r}
+wholesale <- read_csv(
+  file = if (file.exists(paste0(datawd ,"//wholesale_customers_data.csv"))) {
+    paste0(datawd ,"//wholesale_customers_data.csv")
+  } else {
+    "Lecture 1 - dplyr/data/Wholesale_customers_data.csv"
+  },
+  show_col_types = FALSE
+)
+
+wholesale %>%  class()
+```
+`read_csv()` allows to import the dataframe as a tibble. A **tibble** is a modern way to store tabular data in R, the Key differences from base data.frames:
+
+- Printing: only first 10 rows and columns that fit; shows column types
+- No partial matching: column names must match exactly
+- Subsetting: always returns a tibble (not a vector)
+
+If we use *readr* library to import data, the result is always a tibble.
+
+```{r}
+wholesale
+```
+
+## Skimr
+
+*skimr* library is designed to provide summary statistics about variables in data frames, tibbles, data tables and vectors. It allow us to see the main information and summary statistics of our data.
+
+```{r}
+skim(wholesale)
+```
+
+## Pipe
+
+The pipe operator %>% helps us to make our code more readable. The main core verbs of dplyr used for data manipulation are: *filter, arrange, select, mutate and summarize.* Most of them used along with pipe operator.
+
+```{r}
+wholesale %>% 
+  group_by(Channel) %>% 
+  summarize(mean_fresh = mean(Fresh))
+```
+
+## Functions from dplyr
+
+*dplyr* package gets activated when we call the *tidiverse* library. It helps us with simple data manipulation and exploration by using "verb" functions:
+
+`filter()` is used to subset a data frame, retaining all rows that satisfy our conditions BUT when a condition evaluates to NA the row will be dropped, unlike base subsetting with
+
+```{r}
+wholesale |>
+  filter(Channel == "Retail")
+```
+
+From the applied function we can correctly infere that, on the wholesale data set there are 142 observations associated with retail channel. 
+
+As previously stated we can convine conditions: 
+
+```{r}
+# observation must have channel = retail AND fresh bigger than 10,000
+wholesale %>% 
+  filter(Channel == "Retail", Fresh > 10000) # we can use , or &
+
+# observation must have channel = retail OR fresh bigger than 50,000
+wholesale %>% 
+  filter(Channel == "Retail" | Fresh > 50000)
+```
+
+`select()` function allow us to subset (and optionally rename) variables in a data frame, using a concise mini-language that makes it easy to refer to variables based on their name.
+
+```{r}
+wholesale |>
+  select(Channel, Region, Fresh, Grocery)
+```
+
+We can also use helper functions (they are case sensitive!) like: 
+
+* `starts_with()`: to Select columns that start with the specified prefix.
+* `ends_with()`: to Select columns that end with the specified suffix.
+* `contains()`: to Select columns that contain the specified string.
+* `- variable`: to exclude columns
+
+```{r}
+# Select columns that start with the prefix 'De'
+wholesale %>%  select(starts_with("De"))
+```
+
+`arrange()` function orders the rows of a data frame by the values of selected columns. ON the following case we sort the data by decreasing values on the variable *Grocery*. NA values will be display at the end of the table.
+
+```{r}
+wholesale %>% 
+  arrange(desc(Grocery)) %>% 
+  select(Channel, Region, Grocery, Milk, Detergents_Paper)
+```
+
+A very important function contained in *dplyr* library is `mutate()` that creates new columns that are functions of existing variables. It can also modify (if the name is the same as an existing column) and delete columns (by setting their value to NULL).
+```{r}
+#create total_spend as the sum of the other variables
+wholesale <- wholesale %>% 
+  mutate(total_spend = Fresh +
+           Milk +
+           Grocery +
+           Frozen +
+           Detergents_Paper +
+           Delicassen
+  )
+
+wholesale
+```
+
+`summarise()` is used to create summary statistics for a dataframe. It's output is another dataframe or tibble. 
+```{r}
+wholesale %>% 
+  summarise( #we summarise data by Channel group.
+    n = n(), #count of observations
+    avg_total = mean(total_spend), #mean total spent 
+    med_total = median(total_spend), #median of total spent
+    .by = Channel
+  )
+```
+
+As an alternative tu the option *.by* on summarise we can use `group_by()`. 
+```{r}
+wholesale %>% 
+  group_by(Channel) %>% 
+  summarise(n = n(),
+            avg_fresh = mean(Fresh),
+            med_fresh = median(Fresh))
+```
+
+```{r clean1, echo=FALSE, include=FALSE, message=FALSE, warning=FALSE}
+rm(list = ls()[ls() != c("colorize", "datawd")])
+gc()
+```
+
+# Data Visualization
+
+The most popular library for plots on R is **ggplot2**. Based on the type of variable, different graphical representations are available. We will use the preloaded *mpg* database with $n=234$ and 11 variables. 
+
+```{r}
+data(mpg) #creates a tibble called mpg
+mpg %>% glimpse()
+```
+
+## First plot
+
+`ggplot()`, creates an empty plot we only specify the data that we will be owrking on (optional). We then have various layers added to modify it. For example, the `geom_point()` function adds a layer representing the scatterplot of *hwy* vs *displ*.
+To set how the variables in the dataset are mapped to the plot we use the *aes* function contained inside geom_plot.
+
+Here we plot teh relationship between the highway miles per gallon or efficiency (hwy) and engine displacement, in litres or size of engine (displ)
+
+```{r}
+ggplot(data = mpg) + #creates the base plot and the dataset
+  geom_point(mapping = aes(x = displ, y = hwy)) #specify the type and variables
+```
+
+## Aesthetics
+
+`geom_point()` is part of a family of functions that we will call `GEOM_FUNCTION` they vary on type and accept various aesthetics to customize our layer like *colour*, *size* and *shape*.
+
+```{r}
+ggplot(data = mpg) +
+  geom_point(mapping = aes(x = displ, y = hwy, color = class)) 
+
+# we could also customise the color of all points by doing it outside the aes function
+
+# ggplot(data = mpg) +
+#   geom_point(mapping = aes(x = displ, y = hwy), col = "blue")
+```
+
+We can also associate the class variable with different characteristics of a point, such as its size and shape. 
+
+For example, we can define the shape and size of the points by the type of traction in the car (f = front-wheel drive, r = rear wheel drive, 4 = 4 wheel drive)
+
+```{r}
+ggplot(data = mpg) +
+  geom_point(mapping = aes(x = displ, y = hwy, size = drv, shape = drv))
+```
+
+All possible GEOM_FUNCTIONS allow for aesthetic option, but not all can work with the same aesthetics.For example `geom_bar()` does not allow for shape option.
+
+```{r}
+ggplot(data = mpg) +
+  geom_smooth(mapping = aes(x = displ, y = hwy))
+```
+
+In the graph `geom_smooth()` is employed to create a sort of trend line. We can modify the linetype and colors as we saw, this will give us a better picture of the trends for the different values of drv.
+
+```{r}
+ggplot(data = mpg) +
+  geom_smooth(mapping = aes(x = displ, y = hwy, linetype = drv, colour = drv))
+```
+
+## Layers
+
+With ggplot2 we can represent two or more geometries (graph type) on the same plot. 
+
+```{r}
+# ggplot(data = mpg) +
+#   geom_smooth(mapping = aes(x = displ, y = hwy)) + #first we plot the smooth relation
+#   geom_point(mapping = aes(x = displ, y = hwy)) #we add the points in from of that
+
+#The same can be done in a more efficient/readable way with
+ggplot(data = mpg, mapping = aes(x = displ, y = hwy)) +
+  geom_point(mapping = aes(col = class)) +
+  geom_smooth(inherit.aes = TRUE) # default is TRUE, so we can omit it
+```
+We can set theme, titles, labels etc with ggplot.
+```{r}
+a_plot = ggplot(data = mpg, mapping = aes(x = displ, y = hwy, col = class)) +
+  geom_point(size = 3, alpha = 0.7) + # Larger points with transparency
+  geom_smooth(se = FALSE, linetype = "dashed", linewidth = 1.2, span = 1.5) + # Smoother lines without confidence interval
+  scale_color_brewer(palette = "Set1") + # Use a colorblind-friendly palette
+  labs(
+    title = "Fuel Efficiency vs Engine Displacement",
+    subtitle = "Relationship between engine size and highway fuel efficiency across car types",
+    x = "Engine Displacement (liters)",
+    y = "Highway Fuel Efficiency (mpg)",
+    color = "Vehicle Class"
+  ) +
+  theme_minimal(base_size = 15) + # Clean minimalistic theme
+  theme(
+    plot.title = element_text(face = "bold", size = 18, hjust = 0.5),
+    plot.subtitle = element_text(size = 14, hjust = 0.5),
+    legend.position = "bottom", # Move legend to the bottom
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10),
+    legend.background = element_rect(fill = "gray95", color = NA)
+  ) 
+
+#we call the object
+a_plot
+```
+
+## Patchwork 
+
+This library makes simple to combine separate ggplots into a single graphic.
+```{r}
+gg_bar <- ggplot(mpg) +
+  geom_bar(aes(x = drv)) +
+  theme_bw()
+
+gg_bubble <- ggplot(data = mpg) +
+  geom_point(
+    mapping = aes(
+      x = displ,
+      y = hwy,
+      size = cyl,
+      color = as.factor(cyl)
+    ),
+    alpha = 0.7
+  ) +
+  scale_color_viridis_d(option = "C", name = "Cylinders") +
+  scale_size_continuous(name = "Cylinders") +
+  theme_bw()
+
+gg_bar +
+  gg_bubble
+```
+
+## Time series
+
+Time series are the core of temporal data analysis. We’ll use the *stock* dataset containing stock exchange returns.
+
+```{r}
+stock <- read_excel(paste0(datawd,"//stock.xlsx"))
+
+stock %>% glimpse()
+```
+We start by analyzing the behavior of the EU stock on time
+```{r}
+ggplot(stock, aes(y = EU, x = time)) +
+  geom_line() +
+  xlab("time") +
+  theme_bw()
+```
+To analyse at the same time more than one type of stock we need to transform our data from wide to long. For this we use the **tidyr** library. 
+
+```{r}
+#show wide format
+stock %>% head()
+
+stock_sub <- stock %>% 
+  dplyr::select(time, EU, NIKKEI, DAX)
+
+data_long <- stock_sub %>% 
+  pivot_longer(cols = -time, names_to = "index_name", values_to = "index_value") #inverse function if pivot_wider
+
+#show long format
+data_long %>% head()
+```
+
+Now we can repeat the graph above but for three type of stocks and face them to compare: 
+```{r}
+#Faceted plots
+ggplot(data_long, aes(x = time, y = index_value, colour = index_name)) +
+  geom_line() +
+  facet_grid(rows = vars(index_name)) +
+  theme_bw() +
+  theme(legend.position = "bottom", legend.title = element_blank()) +
+  xlab("time") +
+  ylab("Index")
+```
+Without the `faceted_grid()` function we produce a combined graph that (on this case) is not usefull. 
+```{r}
+ggplot(data_long, aes(x = time, y = index_value, colour = index_name)) +
+  geom_line() +
+  #facet_grid(rows = vars(index_name)) +
+  theme_bw() +
+  theme(legend.position = "bottom", legend.title = element_blank()) +
+  xlab("time") +
+  ylab("Index")
+```
+
+## Correlation matrixes 
+
+## Maps and geo spatial-data
+
+```{r clean2, echo=FALSE, include=FALSE, message=FALSE, warning=FALSE}
+rm(list = ls()[ls() != c("colorize", "datawd")])
+gc()
+```
+
+# Reports with Quarto
+
