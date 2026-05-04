@@ -1,0 +1,998 @@
+---
+title: "Statistical Learning"
+author: 
+  - Professor Federico Castelletti
+  - Notes by Maria Briones
+format:
+  html:
+    theme: morph
+    toc: true
+    toc-expand: true
+    self-contained: true
+    #code-fold: true
+---
+<!-- TO DO: - poly function: on what context we would like to have variables "zero-centered"
+            - ask and check for code of plots on slides for best selection
+            - check Stepwise Selection conclussions for both linear and logistic regression.
+            - check why the shrinkage cv plot is differrent from the one on class
+            - check all the regression trees code
+            -->
+
+```{r}
+#| label: Setup
+#| echo: false
+#| warning: false
+#| include: false
+
+#function to make colored letters
+colorize <- function(x, color) {
+  if (knitr::is_latex_output()) {
+    sprintf("\\textcolor{%s}{%s}", color, x)
+  } else if (knitr::is_html_output()) {
+    sprintf("<span style='color: %s;'>%s</span>", color,
+      x)
+  } else x
+}
+
+#Set course working directory
+datawd <- "C:/Users/marub/Desktop/DataSci for Management/Statistics with R/Statistical Learning"
+
+library(pacman)
+
+p_load(dplyr, ISLR, boot, leaps, bestglm, glmnet, hdi, tree, boot)
+
+options(tidyverse.quiet = TRUE)
+```
+
+# Multiple Regression
+
+## Linear regression
+We implement linear regression on the Advertising dataset
+
+```{r}
+advert = read.csv(paste0(datawd,"/advertising.csv"), row.names = 1)
+attach(advert)
+
+plot(newspaper, sales)
+```
+
+We can use function 'lm()' (linear model) to build a linear model. We consider sales (Y) as a function TV (X1), radio (X2) and newspaper (X3).
+
+$$ Y = \beta_0 + \beta_1 X_1 + ... + \beta_p X_p + \epsilon $$
+
+```{r}
+out_lm = lm(sales ~ TV + radio + newspaper)
+
+summary(out_lm)
+```
+We can se that $\beta_3 = \beta_newspaper$ is not significant ($p=0.86>0.1$), which means that newspaper does not have a significant effect on sales (the null hypothesis of the test on this model is that $\beta_3 = 0$). We can also see that the adjusted R-squared value is 0.8972, which means that the model explains 89.72% of the variance in sales.
+
+We can extract results from this output such as the coefficients and residuals, or the adjusted R-squared value, which is a measure of how well the model fits the data.
+
+```{r}
+out_lm$coefficients
+out_lm$residuals
+
+summary_lm = summary(out_lm)
+summary_lm$adj.r.squared
+```
+
+In case we want to compute the MSE of the model we need to estimate de fitted values and compute the squared difference between observations and fitted values. 
+
+```{r}
+## Compute Mean Squared Error (MSE)
+y_hat = predict(out_lm)
+
+y = sales
+n = length(sales)
+
+mse = sum((y - y_hat)^2)/n
+mse
+```
+
+the function `predict()` can be used to make prediction if we add the argument *newdata* with the new data frame containing the covariates for which we want to make predictions.
+
+```{r}
+# Predict sales for new values of predictors for instance TV = 250, radio = 50, newspaper = 0
+predict(out_lm, newdata = data.frame(TV = 250, radio = 50, newspaper = 0)) # is the predicted value of sales
+```
+
+```{r}
+#| label: clean1
+#| echo: false
+#| include: false
+#| warning: false
+
+rm(list = ls()[ls() != c("colorize", "datawd")])
+gc()
+```
+
+## Logistic regression
+
+A logistic model is adequate when our response variable is binary. this means we can define Y's distribution as Bernoulli with parameter $p$ (the probability of success). The model is defined as:
+
+```{r}
+p <- runif(1000, 0, 1)
+
+logit = log(p/(1-p))
+plot(p, logit, type = "p", xlab = "p", ylab = "logit(p)")
+```
+
+We fit the logistic model on the Titanic dataset, to explore the main factor that impacted the probability of survival of passengers.
+
+```{r}
+titanic = read.csv(paste0(datawd,"/titanic_train.csv"), row.names = 1)
+attach(titanic)
+
+#head(titanic)
+
+# to avoid NA 
+titanic = titanic[complete.cases(titanic),]
+```
+
+We select the variables of interest.
+
+```{r}
+# Select the response variable y (Survived, 0 no, 1 yes)
+y = titanic$Survived
+
+# Select covariates
+X.tmp = as.data.frame(titanic[,c(2,4,5:7,9)])
+str(X.tmp)
+```
+
+We then convert factor variables like `Sex`(female, male) into dummies using the function `model.matrix()`. By default model.matrix includes a unit column (for the intercept term) so we remove it.
+
+```{r}
+X = model.matrix(y ~ ., X.tmp)[,-1]
+#head(X)
+```
+
+With this inputs we fit our model with the function glm under family "binomial" and link "logit".
+
+```{r}
+out_glm = glm(y ~ X, family = binomial(link = logit))
+summary(out_glm)
+```
+
+We can provide graphical representations of the results:
+
+```{r}
+## Build the data matrix (including now a unit column for the intercept term)
+XX = cbind(1, X)
+head(XX)
+
+## Select the estimated regression coefficients from the glm output
+beta_hat = out_glm$coefficients
+beta_hat
+
+## Estimate probabilities by computing the linear predictor (XX%*%beta_hat) and applying the inverse logit function
+pi_hat = exp(XX%*%beta_hat)/(1 + exp(XX%*%beta_hat))
+pi_hat
+
+## colors for graph
+col_lab = c()
+col_lab[y == 0] = "deepskyblue1"
+col_lab[y == 1] = "hotpink"
+
+#plot
+par(mfrow = c(1,2), mar = c(5,5,2,2))
+plot(pi_hat, col = col_lab, pch = 20, xlab = "subject (i)", ylab = expression(hat(pi)[i]))
+boxplot(pi_hat ~ y, xlab = "survival", ylab = expression(hat(pi)[i]), col = c("deepskyblue1", "hotpink"), pch = 20)
+```
+
+We can use this results to **predict** the probability of survival for each passenger in the dataset. The predicted probabilities are stored in the `fitted.values` component of the model output.
+
+```{r}
+## For classification purposes, we can set y_fat = 1 if pi_hat > 0.5, otherwise y_hat = 0
+y_hat = ifelse(pi_hat > 0.5, 1, 0)
+
+## Compare true and estimated values of y and compute the Error Rate (ER) (confusion matrix, also error type I and II)
+table(y, y_hat)
+
+er = sum(y != y_hat)/length(y)
+er
+```
+
+Knowing the fitted values and errors we can make individual prediction for passangers based on their characteristics.
+
+```{r}
+## Consider two passengers with the following levels of the covariates
+x.star.rose = c(1, 1, 0, 17, 0, 2, 150)
+x.star.jack = c(1, 3, 1, 19, 0, 0, 40)
+
+## Estimate the corresponding probabilities of survival
+pi_hat_rose = exp(x.star.rose%*%beta_hat)/(1 + exp(x.star.rose%*%beta_hat))
+pi_hat_jack = exp(x.star.jack%*%beta_hat)/(1 + exp(x.star.jack%*%beta_hat))
+
+c(pi_hat_rose, pi_hat_jack)
+```
+
+```{r}
+#| label: clean2
+#| echo: false
+#| include: false
+#| warning: false
+
+rm(list = ls()[ls() != c("colorize", "datawd")])
+gc()
+```
+
+# Cross validation 
+We will use the Auto dataset to illustrate the concept of cross validation. We want to predict the miles per gallon (mpg) of a car based on its horsepower. 
+
+```{r}
+plot(Auto$horsepower, Auto$mpg, ylab = "mpg", xlab = "horsepower", col = "lightblue", pch = 20, ylim = c(8,50))
+
+n = nrow(Auto)
+```
+
+Auto is a dataset with `{r} nrow(Auto)` observations
+
+## Validation set approach 
+
+First, we must make the partition based on a % of the data, on this case 50% for train and 50% for test.
+
+```{r}
+set.seed(123)
+
+# 1. construct a training set by randomly selecting n/2 observations
+train = sample(1:n, n/2) # these observations will be used to fit the model
+train
+
+# The remaining observations will be used as a test (validation) set
+test = setdiff(1:n, train) # difference between sets 1:n and train
+test
+```
+
+Then we fit the model on the training set and compute the MSE on the test set.
+
+```{r}
+#2. fit the model on the training set
+lm_fit = lm(mpg ~ horsepower, data = Auto, subset = train) #subset is used to fit linear model using train only
+
+abline(lm_fit) # add my regression model in the scatter plot
+summary(lm_fit)
+```
+
+Now we apply the trained model ib the test subset to compute the 'goodness of fit' measure, on this case, the MSE.
+
+```{r}
+# Create the test dataset
+Auto_test = Auto[test,] 
+
+head(Auto_test)
+
+# fitted values for test set (yhat)
+fitted_test = predict(lm_fit, newdata = Auto_test)  
+
+# obtain real y values from the test set
+y_test = Auto_test$mpg
+
+# Compute the test MSE
+mean((y_test - fitted_test)^2)
+```
+
+The test MSE for linear model is equal to 21.24991. Now we try the polinomial regression of degree 2 and 3 to see if we can improve the MSE. We use the function `poly()` to create the polynomial terms of the covariate horsepower.
+
+```{r}
+# with poly(horsepower,2) we include both horsepower and horsepower^2
+# Notice that by default variables are zero-centered. Check:
+poly(Auto$horsepower, 2)
+poly(Auto$horsepower, 2, raw = T) # with raw = T they are not centered
+
+## [2] Using polynomial regression of order 2
+lm_fit_2 = lm(mpg ~ poly(horsepower,2), data = Auto, subset = train)
+
+# centering variables do not affect model fitting only the value of the intercept
+fitted_test_2 = predict(lm_fit_2, newdata = Auto_test)  # fitted values for mpg (only for obs' within the test set)
+fitted_test_2
+
+# Compute the test MSE
+mean((Auto_test$mpg - fitted_test_2)^2)
+
+## [3] Using polynomial regression of order 3
+lm_fit_3 = lm(mpg ~ poly(horsepower,3), data = Auto, subset = train)
+
+fitted_test_3 = predict(lm_fit_3, newdata = Auto_test)
+
+mean((Auto_test$mpg - fitted_test_3)^2)
+```
+
+The test MSE for polynomial model of order 2 is equal to 16.48112 and the test MSE for polynomial model of order 3 is equal to 16.58276.
+
+## Leave-One-Out Cross-Validation
+
+First fit the glm (without specifying the family we go back to lm function)
+
+```{r}
+fit_lm = glm(mpg ~ horsepower, data = Auto)
+```
+
+then apply `cv.glm` to the dataset Auto and fit_lm
+
+```{r}
+loocv_out = cv.glm(Auto, fit_lm)
+
+loocv_out$delta[1] # this is the estimated test error for LOOCV (CV_n)
+```
+
+I can apply cross-validation to each polynomial model to choose the best one. We do this in the following *k-fold cross validation*.
+
+## k-fold cross validation
+We apply k-fold cross validation to discriminate between polynomial models of order from 1 to 8.  We fix k = 10 (10 folds) and then divide the n = 392 observations into 10 groups of approximately same size. 
+
+```{r}
+set.seed(1)
+cv.error.8 = rep(NA, 8) # in this empty vector I will store the 8 CVs (one for each polynomial model)
+
+#loop to computhe the CV for each polynomial model of order from 1 to 8
+for(i in 1:8){
+  lm_fit = glm(mpg ~ poly(horsepower,i), data = Auto)
+  cv.error.8[i] = cv.glm(Auto, lm_fit, K = 10)$delta[1]
+}
+
+# we plot to anaylise
+plot(cv.error.8, xlab = "polynomial degree (model complexity)", ylab = "CV", type = "b")
+```
+
+# Linear Model selection 
+
+To study the model selection we consider the credit dataset. We take as dependent variable the balance and nine predictors. 
+
+```{r}
+y = Credit$Balance # Response variable is Balance (Y)
+X = Credit[,2:10] #p = 9 predictors
+
+colnames(X)
+```
+
+Note that not all this varibles are umeric so we may need to transform them in order to apply linear regression. 
+
+## Best subset selection 
+
+We want to fit all the linear models including a subset of the predictors. There are `choose(p,k)` different models including exactly k predictors. For excample if we have p = 9 predictors, there are `choose(9,2) = 36` different models including exactly 2 predictors. We can find them as follows:
+
+```{r}
+p = ncol(X) # this is the number of predictors
+p
+
+# There are choose(p, 2) = 36 different models including exactly 2 predictors
+choose(p, 2)
+
+# These are my models
+combn(1:p, 2) # each column corresponds to a model, i.e. to the labels of the predictors included in the model
+
+choose(p, 3) # 84 models including exactly 3 predictors
+combn(1:p, 3)
+```
+
+We can build a loop cycle iterating over q = 1,...,p and the collection of models with exactly q predictors. Fortunately, function 'regsubsets' already implements best subset selection.
+
+```{r}
+out_subset  = regsubsets(y ~ ., data = X, nvmax = p) # 'nvmax' fix the maximum number of predictors (q) that can be included
+
+str(out_subset)
+
+# Display for each number of predictors included (q = 1,...,p) the best model
+reg_summary = summary(out_subset)
+reg_summary
+```
+
+The shown output involves one column for each predictor and one row for each model (for each number of predictors included). The star indicates the best predictors for each model. For example, the best model with 1 predictor is the one using the variable 'Rating'. 
+
+Of course this decision is based on a criterion, we can use adjusted R squared, RSS, Cp, BIC, etc. The function `regsubsets` computes all these measures for each model and we can use them to choose the best model among the p models.
+
+```{r}
+reg_summary$adjr2 # These are the 9 R squared, one for each of the 9 best models
+reg_summary$rss
+
+par(mfrow = c(1,2))
+plot(reg_summary$rss, xlab = "number of predictors (k)", ylab = " RSS", type = "b", xaxt = "none")
+axis(1, 0:p)
+plot(reg_summary$adjr2, xlab = "number of predictors (k)", ylab = expression(adjustedR^2), type = "b", xaxt = "none")
+axis(1, 0:p)
+```
+
+This suggest we should select the model with 3 predictors which are 'Income', 'Rating' and 'StudentYes'. Unfortunately, Best subset selection model rapidly becomes computationally infeasible when the number of predictors is large. In this case, we can use setpwise selection methods.
+
+For this we modify the function 'regsubsets'. If we go forward adding predictors one at a time, we use the parameter `method="forward"`.
+```{r}
+out_fwd = regsubsets(y ~ ., X, nvmax = p, method = "forward")
+reg_summary_fwd = summary(out_fwd)
+
+reg_summary_fwd
+reg_summary_fwd$adjr2
+```
+
+If we go backward removing predictors one at a time, we use the parameter `method="backward"`.
+```{r}
+out_bwd = regsubsets(y ~ ., X, nvmax = p, method = "backward")
+reg_summary_bwd = summary(out_bwd)
+
+reg_summary_bwd
+reg_summary_bwd$adjr2
+```
+
+On this context is easy to question wich method is better. In general, forward and backward selection do not guarantee to find the best model, but they are computationally more efficient than best subset selection. On this case we can see that we do nor arrive to the same conclusion. 
+
+```{r}
+par(mfrow = c(1,2))
+
+plot(0:p, c(0, reg_summary_fwd$adjr2), ylim = c(0,1), xlab = "number of predictors (k)", type = "b",
+     ylab = expression(adjustedR^2), xaxt = "none", col = "cyan4", main = "Forward")
+axis(1, 0:p)
+
+plot(0:p, c(0, reg_summary_bwd$adjr2), ylim = c(0,1), xlab = "number of predictors (k)", type = "b",
+     ylab = expression(adjustedR^2), xaxt = "none", col = "brown", main = "Backward")
+axis(1, 0:p)
+```
+
+Let's apply the same procedure on a context of classification. We cant to predict the presence of Breast cancer. Information about the data set can be read on the [archive](https://archive.ics.uci.edu/ml/datasets/Breast+Cancer+Coimbra).  
+
+```{r}
+breast = read.csv(paste0(datawd,"/breast.csv"), header = TRUE)
+head(breast)
+
+# Response Y: it is 1 if healthy control, 2 if cancer patient
+#breast$Classification 
+y = ifelse(breast$Classification == 1, 0, 1) #For convenience I convert it into a 0-1 variable
+
+# Select the predictors
+X = breast[,-10]
+p = ncol(X)
+p
+```
+
+Best subset, Forward and Backward selection for generalized linear models (including logistic regression), are not implemented in the library leaps. We cand find this functions on trhe library `bestgml`.
+
+```{r}
+out_subset = bestglm(Xy = cbind(X,y), family = binomial(link = "logit"), IC = "AIC")
+
+out_subset$BestModel
+summary(out_subset)
+
+# to retrieve the q best models with their AICs
+out_subset$Subsets 
+```
+
+From this we can see that the best model according to AIC is the one including 4 predictors, BMI, Glucose, Insulin and Resistin. Trying the stepwise selection methods:
+
+```{r}
+out_fwd = bestglm(Xy = cbind(X,y), family = binomial(link = "logit"), IC = "AIC", method = "forward")
+
+summary(out_fwd)
+```
+
+```{r}
+out_bwd = bestglm(Xy = cbind(X,y), family = binomial(link = "logit"),IC = "AIC", method = "backward")
+
+summary(out_bwd)
+```
+
+## Shrinkage methods
+
+We well use the Hitters data set which contains information on n = 322 baseball players. There are some NA's in the dataset, thus we remove the corresponding records (rows) using the function `complete.cases` which returns TRUE if row is complete, FALSE otherwise.
+
+```{r}
+head(Hitters)
+
+# Select only complete rows
+Hitters = Hitters[complete.cases(Hitters),]
+```
+
+The dataset also contains some categorical variables. Using `model.matrix` function I convert categorical variables (if present in the dataset) into dummy variables. If our catergorical variable has k factors the function will create k-1 dummy variables. We also remove the first column since it contains a unit vector (for the intercept, not needed since by default included by lm, glm functions).
+
+```{r}
+X = model.matrix(Salary ~., Hitters)[,-c(1)]
+
+head(X)
+```
+
+X will be our (n,p) matrix with observations from the predictors. We define now our responde variable. Ridge and Lasso regression are implemented within the package glmnet
+
+```{r}
+y = Hitters$Salary # This is the response variable
+
+p = ncol(X)
+n = nrow(X)
+
+p;n
+```
+
+We can fit Ridge or Lasso using the function `glmnet`. We set alpha = 0 for ridge and alpha = 1 for lasso. An important feature is that we can standardize the predictors before fitting the model, this is important since the penalty term is based on the size of the coefficients and we want to make them comparable
+
+### Ridge method
+
+```{r}
+ridge_0 = glmnet(X, y, 
+                 alpha = 0, #ridge regression
+                 lambda = 0, #parameter of the penalty term, lambda = 0 means no penalty, i.e. equivalent to lm
+                 standardize = TRUE #standardize the predictors before fitting the model
+                 )
+ridge_0
+out_summary = summary(ridge_0)
+```
+
+The estimated parameteres canbe compared with the ones obtained by linear regression. <!--Note that the ridge regression with lambda = 0 should give the same estimates as linear regression, but this is not exactly the case since in ridge regression the predictors are standardized before fitting the model. -->
+
+```{r}
+# Parameter estimates are
+ridge_0$a0
+ridge_0$beta
+
+lm(y ~ X)
+```
+
+Of course we can run `glmnet` for several values of lambda. In order to do this we wirst create a grid of values for lambda (not uniform to better display results) and then fit the gmlnet regression.
+
+```{r}
+grid = 10^seq(-2,10, length = 100)
+
+ridge_grid = glmnet(X, y, alpha = 0, lambda = grid, standardize = TRUE)
+```
+
+We can print all the coefficient estimates using `coef`. We obtain a matrix with one row for each variable and one column for each value of lambda. 
+
+```{r}
+coef_grid = coef(ridge_grid)
+str(coef_grid)
+```
+
+We can also select the corresponding values of lambda. Let's see the behavior of some coefficient estimates as a function of lambda. Note that this vector is by default sorted in drecreasing order.
+```{r}
+ridge_grid$lambda
+plot(ridge_grid$lambda)
+```
+
+Therefore, we need to sort them according to increasing values of lambda.
+
+```{r}
+K = length(grid)
+
+coef_grid[2,K:1] #we resort the columns for beta 2 (row)
+#coef_grid[3,K:1] #we resort the columns for beta 3 (row)
+```
+
+
+```{r}
+# e.g. for beta_2, beta_3
+par(mfrow = c(1,3), mar = c(5,5,2,2))
+
+plot(coef_grid[2,K:1], type = "l", xlab = expression(lambda), ylab = expression(hat(beta)[1]), xaxt = "none")
+abline(h = 0, col = "red", lty = "dashed")
+axis(side = 1, at = c(0,100), labels = c(0,max(grid)))
+
+plot(coef_grid[3,K:1], type = "l", xlab = expression(lambda), ylab = expression(hat(beta)[2]), xaxt = "none")
+abline(h = 0, col = "red", lty = "dashed")
+axis(side = 1, at = c(0,100), labels = c(0,max(grid)))
+
+plot(coef_grid[4,K:1], type = "l", xlab = expression(lambda), ylab = expression(hat(beta)[3]), xaxt = "none")
+abline(h = 0, col = "red", lty = "dashed")
+axis(side = 1, at = c(0,100), labels = c(0,max(grid)))
+```
+
+Yet remains an important question:How to choose lambda? We can use validation set approach or k-fold cross validation. This can be implemented with the function `cv.glmnet`, by default k = 10, otherwise we can choose a different number by setting the parameter 'nfolds'
+
+```{r}
+set.seed(1)
+cv.out = cv.glmnet(X, y, lambda = grid, alpha = 0)
+
+# The function returns a collection of cv errors (one for each value of lambda)
+par(mfrow = c(1,1))
+plot(cv.out)
+```
+
+Then the optimal value of lambda (without log) can be obtained with:
+```{r}
+bestlam = cv.out$lambda.min
+bestlam
+```
+
+Finally, we fit the model for lambda=bestlam on the complete dataset
+
+```{r}
+ridge_best = glmnet(X, y, alpha = 0, lambda = bestlam, standardize = TRUE)
+
+ridge_best$a0
+ridge_best$beta
+```
+
+### Lasso method
+
+We can implement lasso simply by setting alpha = 1 in 'glmnet' function. Again, I consider a grid of values for lambda
+
+```{r}
+grid = 10^seq(-2, 10, length = 100)
+k = length(grid)
+
+lasso_grid = glmnet(X, y, alpha = 1, lambda = grid, standardize = TRUE)
+
+beta_lasso = coef(lasso_grid)
+ridge_grid$lambda
+```
+
+Let's see the behavior of beta estimates as a function of lambda
+```{r}
+par(mfrow = c(1,3), mar = c(5,5,2,2))
+
+plot(coef(lasso_grid)[2,k:1], type = "l", xlab = expression(lambda), ylab = expression(hat(beta)[1]), xaxt = "none")
+abline(h = 0, col = "red", lty = "dashed")
+axis(side = 1, at = c(0,100), labels = c(0,max(grid)))
+
+plot(coef(lasso_grid)[3,k:1], type = "l", xlab = expression(lambda), ylab = expression(hat(beta)[2]), xaxt = "none")
+abline(h = 0, col = "red", lty = "dashed")
+axis(side = 1, at = c(0,100), labels = c(0,max(grid)))
+
+plot(coef(lasso_grid)[4,k:1], type = "l", xlab = expression(lambda), ylab = expression(hat(beta)[3]), xaxt = "none")
+abline(h = 0, col = "red", lty = "dashed")
+axis(side = 1, at = c(0,100), labels = c(0,max(grid)))
+```
+
+Notice that, differently from ridge coefficients, from some value of lambda on, are set = 0. 
+
+Similarly as before, we can implement cross validation methods to choose lambda
+```{r}
+set.seed(1)
+cv.out = cv.glmnet(X, y, lambda = grid, alpha = 1)
+```
+
+The function returns a collection of cv errors (one for each value of lambda)
+```{r}
+par(mfrow = c(1,1))
+plot(cv.out)
+
+# The optimal value of lambda is then
+bestlam = cv.out$lambda.min
+bestlam
+```
+
+Finally, we fit our model for lambda = bestlam on the complete dataset
+```{r}
+lasso_best = glmnet(X, y, alpha = 1, lambda = bestlam, standardize = TRUE)
+
+lasso_best$a0
+lasso_best$beta
+```
+
+## Riboflavin case
+
+Bacterium named "Bacillus Subtilis" is used in agriculture for plant-growth. Its production of riboflavin (vitamin B2) is the main responsible of plant-growth. One objective is therefore to control/increase riboflavin production, e.g. by means of gene manipulation.
+
+The problem on this dataset is  to identify which genes (out of the 4088 available) are responsible of riboflavin production/regulation. 
+
+```{r}
+data(riboflavin)
+str(riboflavin)
+
+y = riboflavin$y
+X = riboflavin$x
+
+length(y)
+dim(X)
+str(X)
+
+p = ncol(X)
+n = nrow(X)
+
+print(c(n, p))
+```
+
+lm fails because n < p and. Stepwise subset selection methods are computational expensive. So, we apply lasso.
+
+```{r}
+grid = 10^seq(-2, 10, length = 100)
+k = length(grid)
+
+lasso_grid = glmnet(X, y, alpha = 1, lambda = grid, standardize = TRUE)
+beta_lasso = coef(lasso_grid)
+
+lasso_grid$lambda
+```
+
+We implement cross validation methods to choose the best lambda
+```{r}
+set.seed(1)
+cv.out = cv.glmnet(X, y, lambda = grid, alpha = 1)
+
+# CV errors (one for each value of lambda)
+
+par(mfrow = c(1,1))
+plot(cv.out)
+
+# Optimal value of lambda is
+
+bestlam = cv.out$lambda.min
+bestlam
+
+# Finally, fit the model for lambda = bestlam on the complete dataset
+lasso_best = glmnet(X, y, alpha = 1, lambda = bestlam, standardize = TRUE)
+
+lasso_best$a0
+lasso_best$beta
+```
+
+With the model applied we can select the genes on the model with non-zero coefficients and retrieve their names:
+```{r}
+genes_in = colnames(X)[which(lasso_best$beta != 0)]
+coeff_in = lasso_best$beta[which(lasso_best$beta != 0)]
+
+names(coeff_in) = genes_in
+sort(round(coeff_in, 2), decreasing = TRUE)
+```
+# Trees
+
+## Regression trees
+
+## Classification trees
+
+We consider the titanic dataset that we divide into a training and test set
+```{r}
+titanic = read.csv(paste0(datawd,"/titanic_train.csv"))
+
+#remove NA's
+titanic = titanic[complete.cases(titanic),]
+
+str(titanic)
+```
+
+Notice that Survived (the response variable y, 0 if no, 1 if yes) is an integer vector, therefore it will be treated as a quantitative variable. To fit a classification tree, I need to convert it into factor
+
+```{r}
+titanic$Survived = as.factor(titanic$Survived)
+
+attach(titanic)
+```
+
+We create the train and test sets (50% each) and corresponding y and X
+```{r}
+n = nrow(titanic)
+
+set.seed(123)
+train = sample(1:n, n/2)
+test  = setdiff(1:n, train)
+
+# Select the response y
+y = as.factor(titanic$Survived)
+
+# Select the covariates
+X.tmp = as.data.frame(titanic[,c(3,5:8,10)])
+str(X.tmp)
+```
+
+Now we need to convert factor variables into dummies using the function `model.matrix`. By default model.matrix includes a unit column (for the intercept term), we remove it.
+```{r}
+X = model.matrix(y ~ ., X.tmp)[,-1]
+X = as.data.frame(X)
+
+head(X)
+attach(X)
+```
+
+For simplicity we create vectors from train and test sets for both y and X.
+```{r}
+y_train = y[train]
+y_test  = y[test]
+
+X_train = X[train,]
+X_test  = X[test,]
+```
+
+### Training the model
+
+Fit a classification tree (using recursive binary splitting) on the train dataset
+```{r}
+tree.titanic = tree(y_train ~ ., data = X_train)
+out = summary(tree.titanic)
+
+out$used
+
+plot(tree.titanic) #this is sensitive to train dataset, recommend to iterate
+text(tree.titanic)
+```
+
+Now we can implement cost complexity pruning
+```{r}
+cv.titanic = cv.tree(tree.titanic, K = 10)
+
+plot(cv.titanic$size, cv.titanic$dev, type = "b", xlab = "|T| (size of subtree)", ylab = "CV error")
+
+cv.titanic$size
+cv.titanic$dev
+```
+
+Find the sub-tree with minimum CV error and prune the original tree
+```{r}
+size.best = cv.titanic$size[which.min(cv.titanic$dev)]
+
+prune.titanic = prune.tree(tree.titanic, best = size.best)
+
+plot(prune.titanic)
+text(prune.titanic)
+```
+
+### Testing the model
+
+We predict Survived for passengers in the test set. The mothod predict won't give 0 or 1 but a probability, that is, the frequency of observations with survival. 
+```{r}
+pi.hat = predict(prune.titanic, newdata = X_test)
+
+head(pi.hat)
+```
+
+To obtain a prediction of y we can set y.hat = 1 if p.hat > 0.5, 0 otherwise.
+```{r}
+p.hat = pi.hat[,2]
+y.hat = ifelse(p.hat > 0.5, 1, 0)
+```
+
+To compare predicted and observed values of y, we can construct a contingency table (confussion matrix).
+```{r}
+#contingency table
+tab = table(y_test, y.hat)
+tab
+```
+
+Considering this the error rate is the sum of the off-diagonal elements (wrong predictions) divided by the total number of observations in the test set.
+```{r}
+# test error rate?
+er = (tab[1,2] + tab[2,1])/sum(tab)
+er
+```
+
+# Bootstrap
+
+## on OLS parameter distribution
+We consider the linear model $Y = \alpha + \beta*x + \epsilon$ where $\epsilon \sim N(0,\sigma^2)$
+
+```{r}
+# Generate n = 1000 obs for some values of parameters alpha, beta, sigma
+n = 1000
+
+beta0 = 10 #alpha
+beta1 = 4 #beta
+sigma = 2 #variance of error term
+
+set.seed(300)
+
+eps = rnorm(n, 0, sigma) #simulation of error term
+x   = rnorm(n) #simulation of x
+y   = beta0 + beta1*x + eps #simulation of y according to model
+
+# Plot the n = 1000 data points
+plot(x, y, ylab = "y", xlab = "x", col = "blue4", pch = 20) 
+
+```
+
+We can compute the (true) mean and variance of the estimator of $\beta_1$ let's remember that the OLS estimator of $\beta_1$ is given by: $\hat \beta_1 \sim N(\beta_1,[\sigma^2(X'X)^{-1}]_{2,2})$ where $X$ is the data matrix with a unit column for the intercept term and a column for x.
+```{r}
+X = cbind(1, x) #add the intercept term to the data matrix
+
+mean_beta1 = beta1
+
+var_beta1  = (sigma^2*solve((t(X)%*%X)))[2,2]
+
+print(c(mean_beta1, var_beta1))
+```
+
+Now we want to approximate the distribution of beta1_hat using the bootstrap
+```{r}
+# select a random sample of size n with replacement from the original data (x,y)
+set = sample(1:n, n, replace = TRUE)
+
+#retrieve the corresponding y and x values for the selected sample
+y[set]
+x[set]
+
+out = lm(y[set] ~ x[set])
+
+# we extract the estimated beta1 from the output of lm and store it in the vector out_boot
+out$coefficients[2]
+```
+
+We repeat this procedure B times to obtain a collection of B bootstrap estimates of $\beta_1$
+```{r}
+# establish the number of bootstrap iterations (draws)
+B = 5000 
+
+# create empty vector where we will store bootstrap estimates of beta1
+out_boot = c() 
+
+for(b in 1:B){
+  
+  set = sample(1:n, n, replace = TRUE) # each timewe randomly draw a sample of size n from my population
+  
+  out_boot[b] = lm(y[set] ~ x[set])$coefficients[2] # I estimate (and store) beta1 using lm
+  
+}
+
+head(out_boot)
+```
+
+Now we plot to visually inspect the distribution of the bootstrap estimates of $\beta_1$ and compare it with the true distribution of $\hat \beta_1$ (which is normal with mean beta1 and variance var_beta1).
+```{r}
+# Distribution of beta_hat approximated by bootstrap is
+hist(out_boot, 
+     xlab = expression(hat(beta)[1]),
+     main = "Distribution of bootstrap estimates and true distribution",
+     col = "lightblue", freq = FALSE, ylim = c(0, 7), breaks = 30)
+
+# add the true distribution of beta_hat
+plot(function(x) dnorm(x, mean_beta1, sd = sqrt(var_beta1)),
+     from = 3.5, to = 4.5,
+     add = TRUE, col = "black", lwd = 1.5)
+```
+
+## Example on asset allocation 
+
+On some cases we don't have closed-form results for the sampling distribution estimator. We consider the Portfolio dataset which contains 100 returns for two assets X and Y.
+
+```{r}
+plot(Portfolio)
+```
+
+We want to determine on wich proportions should I invest on each asset to minimize the risk of my portfolio, being $\alpha$ the propotion invested in asset X and $1-\alpha$ the propotion invested in asset Y.
+
+The risk of the portfolio is measured by the variance of the return of the portfolio, that is, $Var(\alpha*X + (1-\alpha)*Y)$. We can estimate this variance for each value of $\alpha$ and then select the value of $\alpha$ that minimizes it.
+
+```{r}
+x = Portfolio$X
+y = Portfolio$Y
+
+#according to formula of optimization
+(var(y)-cov(x,y))/(var(x) + var(y) - 2*cov(x,y))
+```
+
+As we now, this optimum point is sample dependent, therefore we can use the bootstrap to estimate the distribution of $\alpha$ and obtain confidence intervals for it.
+
+We start by defining a function to estimate $alpha$ (best allocation between the two assets) based on the optimization process of the variance of the portfolio. The function depends on "population" data and a vector (index) indexing the data that at each bootstrap iteration must be used to compute the estimate. In our example, data is a two-column dataframe with X and Y.
+```{r}
+# alpha function
+alpha.fn = function(data, index){
+  
+  X = data$X[index]
+  Y = data$Y[index]
+  
+  alpha_hat = (var(Y) - cov(X,Y))/(var(X) + var(Y) - 2*cov(X,Y))
+  
+  return(alpha_hat)
+}
+```
+
+If, for instance, we fix index = 1:100 all 100 observations are used to estimate alpha
+```{r}
+alpha.fn(Portfolio, 1:100)
+```
+
+Each bootstrap estimate can be instead obtained by randomly drawing with replacement 100 observations from the dataset, i.e. by setting index = sample(1:100, 100, replace = T)
+```{r}
+head(sample(1:100, 100, replace = T))
+
+alpha.fn(data = Portfolio, index = sample(100, 100, replace = T))
+```
+
+We need to reiterate the previous command for number of bootstrap iterations B = 5000. We can do this using a for cycle (as in the first example) or the function `boot` which requires three arguments: a dataset, a function to be applied on, the number of bootstrap iterations. The function result is an estimate of the standard error of the estimator defined by alpha.fn
+```{r}
+#?boot
+
+out_boot = boot(Portfolio, alpha.fn, R = 5000)
+
+str(out_boot)
+```
+
+```{r}
+# out_boot$t collects the R bootstrap draws
+hist(out_boot$t,
+     xlab = expression(hat(alpha)),
+     main = "Distribution optimal investment proportion",
+     sub = "Estimated by bootstrap",
+     col = "lightgreen", freq = FALSE, ylim = c(0, 5), breaks = 30)
+```
+
+From the output we can recover, the expected value and standard deviation of the estimator, as well as confidence intervals:
+```{r}
+mean(out_boot$t)
+sd(out_boot$t)
+
+quantile(out_boot$t, c(0.025,0.975))
+```

@@ -66,20 +66,18 @@ plot(x, fz,
      lwd=2 
      )
 ```
-We can also perform the plot in a more direct way combining functions:
-```{r}
-plot(function(y)dnorm(y),#we create an annonymous function only inside of the plot
-     from=-5, to=5)
-```
+We can also perform the plot in a more direct way combining functions to plot a $X\thicksim N(0,1)$ distribution and a $X\thicksim N(3,5^2)$:
 
-Similarly, we can plot the density of $X\thicksim N(3,5^2)$
 ```{r}
+par(mfrow=c(1,2)) 
+plot(function(y)dnorm(y),#we create an annonymous function only inside of the plot
+     main = "Density of Gaussian (0,1)",
+     from=-5, to=5)
 plot(function(y)dnorm(y,3,5), 
      from = -10, to=20, 
-     main = "Density of Gaussian")
+     main = "Density of Gaussian (3,25)")
 ```
-
-Now we wish to draw more functions in the same plot in order to visualize the effect of an increase on parameters:
+In order to visualize the effect of an increase on parameters we can plot all function on a same grid:
 ```{r}
 # first N(0,1)
 plot(function(y)dnorm(y), 
@@ -97,7 +95,9 @@ plot(function(y)dnorm(y, 12, 1),
      col=3, #color picked by number
      add=T)
 ```
-But, how does a histogram aprroximate to density? 
+
+With the help of a for loop we can also see how a histogram approximate to a normal density as we increase the sample size.
+
 ```{r}
 values = c(10, 100, 1000, 10000) #we define sample sizes
 
@@ -116,7 +116,7 @@ for (n in values) {
 
 ## Uniform distribution 
 
-Let's replicate this for a uniform distribution $Y\thicksim U(3,7)$ using the sames values than before plus 100.000
+We can replicate this exercise for the case of a uniform distribution $Y\thicksim U(3,7)$ using the sames values than before (plus 100.000).
 
 ```{r}
 values = c(100, 1000, 10000, 100000)
@@ -140,11 +140,12 @@ for (n in values) {
 
 ```
 
-# User defined functions
+### User defined functions
 
-In R there are built-in functions like `dnorm(x)`. But we can also create new functions. Let's create a function called MyFnc with 3 inputs and an output called out, wich performs some operations in the body {}.
+On R there are built-in functions like `dnorm(x)`. But we can also create new functions. for example we can create a function called MyFnc with 3 inputs and an output called out, which performs some operations in the body {}.
 
 ```{r eval=FALSE}
+#basic structure of a function
 MyFnc = function(arg1,arg2,arg3){
   #statement1
   
@@ -156,11 +157,15 @@ MyFnc = function(arg1,arg2,arg3){
 }
 ```
 
-## Levy distribution
+## Lévy distribution
 
-For example, we need a new fuction for evaluating the density of a Levy distribution.
+Lévy distribution, is a continuous probability distribution for a non-negative random variable. It is a special case of the inverse-gamma distribution and a stable distribution. Is primarily used to model processes characterized by heavy tails, non-negative values, and frequent, significant short-term changes (non-Gaussian, anomalous diffusion)
+
+Common uses include modeling financial market fluctuations, animal foraging patterns (Lévy flights), network traffic, and physical phenomena like turbulence or particle transport.
+
+There isn't a built-in function on R for this distribution, so we can download a specialized library or build the function ourselves.
+
 ```{r Levy}
-
 #we define the function
 dlevy = function(x,th){
   #replicate the given math expression 
@@ -169,13 +174,12 @@ dlevy = function(x,th){
   
   return(f)
 }
-#now dlevy is a function in our evironoment.
-
-#we evaluate the function on x=5 ,th=2
-dlevy(5, 2)
 ```
+
+Now `dlevy()` is a function in our environment with two inputs. We can evaluate and create a plot to see the Lévy PDF.
+
 Now that we have created our `dlevy(x,th)` function, we can plt the Levy pdf 
-```{r}
+```{r Levy}
 par(mfrow=c(1,1))
 
 x = seq(0.01,10, by=0.01)
@@ -184,7 +188,8 @@ y = dlevy(x,2)
 plot(x,y,
      type="l")
 ```
-We can redifine `dlevy` with default values to use similarly to the `dnorm` function
+
+We can also redefine the `dlevy()` function with default input values to use similarly to `dnorm`:
 ```{r}
 #we define the function
 dlevy = function(x=0,th=1){
@@ -196,15 +201,20 @@ dlevy = function(x=0,th=1){
   
   return(f)
 }
-#now dlevy is a function in our evironoment.
 
 #we evaluate the function on x=5 ,th=1
 dlevy(5)
 ```
+
 ## Laplace distribution
 
-Now we are going to create a function for a Laplace density function: 
+Laplace distribution is a continuous probability distribution named after Pierre-Simon Laplace. It is also sometimes called the double exponential distribution, because it can be thought of as two exponential distributions (with an additional location parameter) spliced together along the x-axis
+ 
+The Laplace distribution (double exponential) is commonly used to model data with higher peaks and fatter tails than a normal distribution, particularly when data is clustered around a center with occasional extreme outliers. It is widely applied in finance for modeling risk, signal processing for noise reduction, hydrology for extreme events, and in machine learning to impose sparsity (Lasso regularization).
+
+As before, we need to create a function for a Laplace density: 
 ```{r}
+#definition of the function:
 dlaplace = function(x,th){
   #th will be a vector containing both arguments
   mu = th[1]
@@ -222,15 +232,14 @@ dlaplace = function(x,th){
 #we evaluate on x=5 , mu=0 , b=1
 dlaplace(5, c(0,1))
 ```
+
 # Central Limit Theorem (CLT)
 <!-- 05-02-2026 -->
-
-We'll try to see how the CLT works on different distributions and sample sizes.
 
 We know if we have $n$ random variables $X$ with unknown distribution and $E(X)=\mu$, $V(X)=\sigma^2$, ($n>50$) then the sum of each RV: 
 
 $$\sum_{i=1}^{n}{X_i}\approx N(n\mu,n\sigma^2)$$
-Let's say we have $X\thicksim U(0,1)$ then, we know by the uniform properties than $E(X)=1/2$ and $V(X)=1/12$. 
+We can try to see how the CLT works on different distributions and sample sizes. First Let's assume we have a random variable $X\thicksim U(0,1)$ then, we know by the uniform properties that $E(X)=1/2$ and $V(X)=1/12$. 
 
 ```{r}
 # sample size 
@@ -244,7 +253,8 @@ X = runif(M*n, #number of observations
           min=0, max=1)
 ```
 
-Now we generate a matrix were the columns are $n$ random variables with uniform distribution (0,1) and the rows are the extractions for each one of those variables. 
+Now we generate a matrix were each column from 1 to $n$ is a random variable with uniform distribution (0,1) and the rows are the $M$ extractions for each one of those variables. 
+
 ```{r}
 # X as a matrix
 XMat = matrix(X,   #fill the matrix with the values of X
@@ -255,7 +265,7 @@ XMat = matrix(X,   #fill the matrix with the values of X
 
 We sum each row, this way we will have $m=1000$ random variables that should have a normal distribution according to the CLT:
 
-$$Y=\sum_{i=1}^{n=2}{X_i}\approx N(n/2,n/12)$$
+$$Y=\sum_{i=1}^{n=2}{X_i}\approx N \left( \frac{n}{2}, \frac{n}{12} \right)$$
 
 ```{r}
 #sum row by row
@@ -270,11 +280,12 @@ hist(Y, 50, col=4, prob=TRUE,
 plot(function(x)dnorm(x, n/2, sqrt(n/12)),
      add=TRUE, col=2, lwd=3, xlim=range(Y)) 
 ```
-We can see that, in the case of a uniform distribution, even with a sample of n=2, the normal distribution is a good aproximmation for the distribution of it's sum (and mean).
+We can see that, in the case of a uniform distribution, even with a sample of n=2, the normal distribution is a good approximation for the distribution of it's sum (and mean).
 
 ## Different levels of n
 
-Now we will see the CLT for the sum of n uniforms
+Of course we can repear the exercise to understand how the distribution of the sample mean evolves when we increase the size of the sample.
+
 ```{r, , fig.width=10, fig.height=8}
 par(mfrow=c(2,2))
 M=10000 # Number of simulations
@@ -308,31 +319,40 @@ for(n in v){
 
 ## Sample variance 
 
-We know that for a generic population the sample variance is given by 
+As we know for a generic population the sample variance is given by 
 
-$$s^2=\frac{\sum(X_i-\bar X)^2}{n-1} \text{ and thus: } \frac{(n-1)s^2}{\sigma^2}\thicksim \chi^2_{n-1}$$
-Now, let's say that we have the probability $Pr(s^2>3)$ where $s^2$ is the sample variance, when $X\thicksim N(3,4)$ and the sample size of our realization is $n=7$
+$$s^2=\frac{\sum(X_i-\bar X)^2}{n-1}$$ 
+and thus, when $ X \thicksim N(\mu, \sigma ^2)$ then:
+
+$$\frac{(n-1)s^2}{\sigma^2}\thicksim \chi^2_{n-1}$$
+Now, let's say that we have the probability $Pr(s^2>3)$ where $s^2$ is the sample variance, when $X \thicksim N(3,4)$ and the sample size of our realization is $n=7$
 
 $$\frac{(7-1)s^2}{4} \thicksim  \chi^2_{7-1}$$
-Then $Pr(s^2>3)=1-Pr(s^2<3)$
+$$ \begin{split} 
+  Pr(s^2>3) &= 1-Pr(s^2<3)\\
+            &= 1-Pr\left(\frac{6s^2}{4}<\frac{6\cdot 3}{4}\right)
+   \end{split}$$ 
+
+which we can compute as:
 ```{r}
 #exact value of the pdf of chi square
 1 - pchisq(18/4, 6)
 ```
 
-If we want to evaluate $Pr(S^2>3)$ without using $\chi^2$, when $X \thicksim N (3,4)$ and $n=7$ we'll use a *Montecarlo Procedure*
+If we want to evaluate $Pr(s^2>3)$ without using $\chi^2$, when $X \thicksim N (3,4)$ and $n=7$ we can use a *Montecarlo Procedure*
 ```{r}
-#number of simulations
-M = 10000
+# First we set our parameters: 
 
-#population parameters 
+M = 10000 # number of simulations
+
+# ---- population parameters 
 Mu =3
 Sigma = 2
 n = 7
 
-#Innefficient code for montecarlo TO DO: efficient way 
+#Example of code for montecarlo (innefficient):
 
-#counter of number of times S^2>3
+#counter of number of times that condition s^2>3 is TRUE
 C = 0
 
 for (i in 1:M) {
@@ -342,12 +362,13 @@ for (i in 1:M) {
   #compute sample variance (the function in r uses the sample variance formula)
   s2 = var(x)
   
-  #we update our counter if the contidion is true
+  #we update our counter if the condition is true
   if(s2>3){
     C = C+1
   }
 }
 
+#finally we compute the counter/simulation ratio
 C/M
 
 ```
@@ -376,6 +397,7 @@ for (i in 1:M) {
 plot(cumsum(C)/(1:M)) #cumulative mean
 abline(h=1-pchisq(18/4, 6), col=2, lwd=3)
 ```
+
 This plot can be used as a guidance for fixing M once it stabilizes. For example, with the graph we can see that we do not need 10.000 simulations, but only 2.000. 
 
 A third approach would be 
@@ -459,7 +481,7 @@ exone = function(x){
 #we evaluate
 plot(function(x)exone(x), from=-3, to=6)
 ```
-## Function optimum
+qn## Function optimum
 
 `optimum` is the function we use for numerical optimization. 
 Inputs: 
@@ -1019,12 +1041,118 @@ t.test(x, y, conf.level = 0.95,
 ```
 Here the degrees or freedom are significantly lower ($153.9$) than in the previous case. Also we have a slightly wider CI on this case.
 
-In consequence we must ask ourselves: is it reasonable to assume equal variances?
+In consequence, we must ask ourselves: is it reasonable to assume equal variances?
 ```{r}
 #compute CI for sigma_1^2/sigma_2^2
 var.test(x,y,conf.level = 0.99)
 ```
 As the CI provided by this test includes the value 1 we can a assume (with a 99% confidence level) that the variances are equal.
+
+## Variance CI
+
+We can also program a user-costumed function to compute the Variance Confidence Interval.
+
+```{r}
+#customized function
+NormalVar_CI <- function(x, lvl=0.95){
+  
+  #known parameters
+  alpha = 1-lvl
+  n = length(x)
+  
+  #---------list to be filled
+  params <- list(1,2,3,4,5)
+  param_names <- c("Computed values",
+                   "Lower bound", "Upper bound",
+                   paste0("Confidence Interval at ",lvl*100,"%"),
+                   "CI width")
+  names(params) <- param_names
+  
+  #computed values
+  s2 = var(x) #sample variance
+  chi1 = qchisq(1-alpha/2, n-1)
+  chi2 = qchisq(alpha/2, n-1)
+
+  comp = c(s2, chi1, chi2)
+  names(comp) = c("Sample variance", "Chisqare 1-alpha/2 quantile", "Chisqare alpha/2 quantile")
+  params[[1]] <- comp
+  
+  #lower bound
+  L1 = ((n-1)*s2)/chi1
+  params[[2]] <- L1
+  
+  #upper bound
+  L2 = ((n-1)*s2)/chi2
+  params[[3]] <- L2
+  
+  #Confidence interval 
+  CI = c(L1, L2)
+  params[[4]] <- CI
+  
+  #width
+  w <- diff(CI)
+  params[[5]] <- w
+  
+  return(params)
+}
+```
+
+As usual, we generate a random sample of variance 3.103449 (equal to the example on lecture with $(n-1)s^2=90$) then we imagine we do not know this variance. We want to know if we can assume the variance is 3. So we compute our function.
+```{r}
+#generate a random sample
+x = rnorm(30, 0, sd=sqrt(3.103449))
+
+#eval
+a <- NormalVar_CI(x)
+a
+```
+As the produced CI contains the value 3, we can say that 3 is a reasonable variance for the population. 
+
+Two estimate the ratio of two samples variances we can use the `var.test()` function. This is useful if I want to see if one sample is more uncertain than other. 
+
+```{r}
+# generate two random samples
+x = rnorm(50)
+y = rnorm(30,1)
+
+#compute the test 
+var.test(x,y) #default conf.level=0.95
+```
+
+As we can see 1 is included on the confidence interval for a level of 95% of confidence. thus, we cannot reject that the two variances are equal.
+
+# Test hypothesis
+
+## Test by the right
+
+Say we have a population with gaussian distribution, and unknown variance. We want to test if the population mean is -2 or greater than 2 with a confidence level of 95%. 
+
+We need to perform a t.test whose inputs are the observed sample, the mean population under the null hypothesis and the alternative hypothesis (less, greater, two.sided) and the confidence level.
+
+```{r}
+# H0: mu=-2 vs H1: mu > -2, alpha = 0.05
+
+x <- rnorm(7, -2, 1) #observed sample
+
+t.test(x, mu=-2, alternative = "greater", conf.level=0.95)
+```
+as $pvalue>0.05$ we do not reject the null hypothesis. If we want to reproduce some of this result, for example, the standardized test statistic or the p-value: 
+
+```{r}
+t = (mean(x)-(-2))/(sd(x)/sqrt(length(x)))
+t
+
+p = 1 - pt(t, 6)
+p
+```
+## Bilateral test
+
+Now we have a gaussian population with unknown variance. The null hypothesis states the population mean is 2 and the alternative any number different from 2. Do we reject with a level of confidence of 95%?
+
+```{r}
+t.test(x, mu=2, alternative = "two.sided", conf.level=0.95)
+```
+We reject since 1) $p value < 0.05$ but also 2) the 95% confidence interval does not contain the population mean proposed by the null hypothesis. Moreover, 3) the standardized statisctic is lower than the cat-off t: $t_{obs} < t_{95%} = qt(0.05,6) = -1.94$.
 
 ```{r totalclean, echo=FALSE, include=FALSE, message=FALSE, warning=FALSE}
 rm(list = ls())
